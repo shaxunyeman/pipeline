@@ -9,7 +9,7 @@ pipeline {
 		stage('Build') {
 			steps {
 				sh 'npm install'
-				sh './test_preLoader.js'
+				sh 'node ./test_preLoader.js'
 			}
 		}
 	}
