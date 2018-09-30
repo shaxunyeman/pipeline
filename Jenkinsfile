@@ -8,7 +8,9 @@ pipeline {
 	stages {
 		stage('Build') {
 			steps {
-				sh 'npm install'
+				sh 'npm install --save chainsql'
+				sh 'npm install --save string-random'
+				sh 'npm install --save single-line-log'
 				sh 'node ./test_preLoader.js'
 			}
 		}
