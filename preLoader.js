@@ -9,7 +9,7 @@ chainSQL = new chainsqlapi();
 // initial
 chainsql_ws = config.ChainSQLEntry.URL;
 chainsql_root = config.ChainSQLEntry.RootAccount;
-var needNewAccounts = config.AccountRecords.length;
+var needNewAccounts = config.NewAccounts.length;
 var newAccounts = new Array();
 
 var createAccountPb = {
@@ -20,6 +20,12 @@ var createAccountPb = {
 
 var createTablePb = {
 	pb: new Progress('表创建  ', 50),
+	completed: 0,
+	total: 0
+};
+
+var dropTablePb = {
+	pb: new Progress('删除表  ', 50),
 	completed: 0,
 	total: 0
 };
@@ -54,30 +60,26 @@ function set_invokers() {
 	}
 	tools.setup_invoker(sayBanner, '\r');
 
-	var tables = [
-		config.Accounts,
-		config.Rolers,
-		config.FileItems,
-		config.BindRoleWithFileItem,
-		config.Projects,
-		config.BindRoleWithProject,
-		config.UploadedFileItem,
-		config.Feedback,
-	];
+	// drop tables before creating tables
+	dropTablePb.total = config.Tables.length;
+	for(var x = 0; x < config.Tables.length; x++) {
+		tools.setup_invoker(DropTable, config.Tables[x]);
+	}
+	tools.setup_invoker(sayBanner, '\r');
 
 	// create tables
-	createTablePb.total = tables.length;
-	for(var x = 0; x < tables.length; x++) {
-		tools.setup_invoker(CreateTable, tables[x]);
+	createTablePb.total = config.Tables.length;
+	for(var x = 0; x < config.Tables.length; x++) {
+		tools.setup_invoker(CreateTable, config.Tables[x]);
 	}
 	tools.setup_invoker(sayBanner, '\r');
 
 	// grants
-	grantPb.total = needNewAccounts*tables.length;
+	grantPb.total = needNewAccounts*config.Tables.length;
 	for (var idx = 0; idx < needNewAccounts; idx++) {
-		for (var y = 0; y < tables.length; y++) {
+		for (var y = 0; y < config.Tables.length; y++) {
 			tools.setup_invoker(grant, {
-				tableName: tables[y].tableName,
+				tableName: config.Tables[y].tableName,
 				account: idx
 			});
 		}
@@ -85,10 +87,11 @@ function set_invokers() {
 	tools.setup_invoker(sayBanner, '\r');
 
 	// pre-load data into tables
-	insertPb.total = 3;
-	tools.setup_invoker(insertRecord,{tableName: 'Accounts', records: config.AccountRecords});
-	tools.setup_invoker(insertRecord,{tableName: 'Rolers', records: config.RolerRecords});
-	tools.setup_invoker(insertRecord,{tableName: 'FileItems', records: config.FileItemRecords});
+	insertPb.total = config.Records.length;
+	for(var z = 0; z < config.Records.length; z++) {
+		var o = config.Records[z];
+		tools.setup_invoker(insertRecord,{tableName: o.tableName, records: o.values});
+	}
 	tools.setup_invoker(sayBanner, '\r');
 
 	// create login keys
@@ -126,6 +129,37 @@ function createAnAccount() {
 function sayBanner(say) {
 	console.log(say);
 	tools.invoke();
+}
+
+function DropTable(tableObject) {
+	dropTablePb.pb.render({
+		completed: dropTablePb.completed,
+		total: dropTablePb.total
+	});
+
+	function next() {
+		dropTablePb.pb.render({
+			completed: ++dropTablePb.completed,
+			total: dropTablePb.total
+		});
+		tools.invoke();
+	}
+
+	chainSQL.dropTable(tableObject.tableName)
+	.submit({expect: 'validate_success'})
+	.then(function(data) {
+		if(data.status === 'validate_success') {
+			next();
+		} else {
+			console.log('\nDrop a ', tableObject.tableName, ' table unsuccessfully. reason: ', data.status);
+		}
+	}).catch(function(error) {
+		if(error.resultCode === 'tefTABLE_NOTEXIST') {
+			next();
+		} else {
+			console.log('\nDrop a ', tableObject.tableName, ' table unsuccessfully. Exception reason: ', JSON.stringify(error));
+		}
+	});
 }
 
 function CreateTable(tableObject) {
@@ -228,7 +262,7 @@ function createLoginKeys() {
 	var saveFiles = new Array();
 	for(var i = 0; i < needNewAccounts; i++) {
 		var enryption = tools.encrypt(JSON.stringify(newAccounts[i]), config.LoginKeys.secret);
-		var saveFile = config.LoginKeys.savePath + config.AccountRecords[i].AccountName;
+		var saveFile = config.LoginKeys.savePath + config.NewAccounts[i].AccountName;
 		try {
 			fs.writeFileSync(saveFile, enryption);
 		} catch(e) {
